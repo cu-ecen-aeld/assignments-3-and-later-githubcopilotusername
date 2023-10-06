@@ -1,4 +1,8 @@
 #include "systemcalls.h"
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,7 +20,8 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
+	int s = system(cmd);
+	if (s == -1) { return false;}
     return true;
 }
 
@@ -58,7 +63,27 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
+	fflush(stdout);
+	int pipef[2];
+	pipe(pipef);
+	fcntl(pipef[1], F_SETFD, fcntl(pipef[1], F_GETFD | FD_CLOEXEC));
+	if ((count == 3) && (command[2][0] != '/')) {return false;}
+    int id = fork();
+    if (id == 0) {
+    	close(pipef[0]);
+	execv(command[0], command);
+	int fail = -1;
+	write(pipef[1], &fail, sizeof(int));
+	return false;
+}
+else {
+	close(pipef[1]);
+	int* waitreturn = NULL;
+	waitpid(-1, waitreturn, 0);
+	int status = 0;
+	read(pipef[0], &status, sizeof(int));
+	if (status == -1) {return false;}
+}
     va_end(args);
 
     return true;
@@ -92,8 +117,25 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+	int childpid = 0;
+	int fd = open("redirect.txt", O_WRONLY|O_TRUNC|O_CREAT, 0644);
+	fflush(stdout);
+	childpid = fork();
+	if (childpid==0) {
+	dup2(fd, 1);
+	close(fd);
+	setenv("HOME", "\\$HOME", true);
+	int status = execv(command[0], command + 1);
+	if (status == -1) {return false;}	
+}
+else {
+	int* waitnumber = NULL;
+	waitpid(childpid, waitnumber, 0);
+	close(fd);
+}
 
     va_end(args);
 
     return true;
 }
+
